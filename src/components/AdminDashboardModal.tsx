@@ -95,6 +95,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [tempPhoto, setTempPhoto] = useState(config.profileImage);
 
   useEffect(() => {
+    setTempWhatsapp(config.whatsapp);
+    setTempEmail(config.email);
+    setTempBio(config.bio);
+    setTempAvailable(config.isAvailable);
+    setTempPhoto(config.profileImage);
+  }, [config]);
+
+  useEffect(() => {
     if (isAuthenticated) {
       fetchFirestoreOrders();
     }

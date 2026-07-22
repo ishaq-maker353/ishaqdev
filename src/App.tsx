@@ -18,7 +18,7 @@ import { ResumeModal } from './components/ResumeModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { AuthModal } from './components/AuthModal';
 import { ClientOrdersModal } from './components/ClientOrdersModal';
-import { auth, onAuthStateChanged, User } from './lib/firebase';
+import { auth, onAuthStateChanged, User, db, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection } from './lib/firebase';
 
 export default function App() {
   const [activePage, setActivePage] = useState<string>('home');
@@ -32,17 +32,12 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Persistence via LocalStorage with guaranteed user profile photo
+  // Site configuration with Firestore + localStorage backup
   const [config, setConfig] = useState<SiteConfig>(() => {
     const saved = localStorage.getItem('ishaq_site_config');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        return {
-          ...parsed,
-          profileImage: initialSiteConfig.profileImage,
-          logoImage: initialSiteConfig.logoImage,
-        };
+        return JSON.parse(saved);
       } catch (e) {
         return initialSiteConfig;
       }
@@ -81,6 +76,107 @@ export default function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isMyOrdersOpen, setIsMyOrdersOpen] = useState(false);
 
+  // Firestore Real-Time Listener for Config
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'config', 'main'), (snapshot) => {
+      if (snapshot.exists()) {
+        const firestoreConfig = snapshot.data() as SiteConfig;
+        setConfig(firestoreConfig);
+        localStorage.setItem('ishaq_site_config', JSON.stringify(firestoreConfig));
+      } else {
+        setDoc(doc(db, 'config', 'main'), initialSiteConfig).catch(console.error);
+      }
+    }, (err) => {
+      console.error('Firestore Config Sync Error:', err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Real-Time Listener for Projects
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'projects'), (snapshot) => {
+      if (!snapshot.empty) {
+        const list: Project[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() } as Project);
+        });
+        setProjects(list);
+        localStorage.setItem('ishaq_projects', JSON.stringify(list));
+      } else {
+        initialProjects.forEach((p) => {
+          setDoc(doc(db, 'projects', p.id), p).catch(console.error);
+        });
+      }
+    }, (err) => {
+      console.error('Firestore Projects Sync Error:', err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Real-Time Listener for Pricing Plans
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'plans'), (snapshot) => {
+      if (!snapshot.empty) {
+        const list: PricingPlan[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() } as PricingPlan);
+        });
+        setPlans(list);
+        localStorage.setItem('ishaq_pricing_plans', JSON.stringify(list));
+      } else {
+        initialPricingPlans.forEach((p) => {
+          setDoc(doc(db, 'plans', p.id), p).catch(console.error);
+        });
+      }
+    }, (err) => {
+      console.error('Firestore Plans Sync Error:', err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Real-Time Listener for Testimonials
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'testimonials'), (snapshot) => {
+      if (!snapshot.empty) {
+        const list: Testimonial[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() } as Testimonial);
+        });
+        setTestimonials(list);
+        localStorage.setItem('ishaq_testimonials', JSON.stringify(list));
+      } else {
+        initialTestimonials.forEach((t) => {
+          setDoc(doc(db, 'testimonials', t.id), t).catch(console.error);
+        });
+      }
+    }, (err) => {
+      console.error('Firestore Testimonials Sync Error:', err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Real-Time Listener for Contact Messages
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'messages'), (snapshot) => {
+      if (!snapshot.empty) {
+        const list: ContactMessage[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() } as ContactMessage);
+        });
+        setMessages(list);
+        localStorage.setItem('ishaq_messages', JSON.stringify(list));
+      }
+    }, (err) => {
+      console.error('Firestore Messages Sync Error:', err);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Smooth scroll to section
   const handleNavigate = (pageId: string) => {
     setActivePage(pageId);
@@ -96,7 +192,7 @@ export default function App() {
     }
   };
 
-  // Sync state to local storage
+  // Local Storage Backups
   useEffect(() => {
     localStorage.setItem('ishaq_site_config', JSON.stringify(config));
   }, [config]);
@@ -123,65 +219,121 @@ export default function App() {
     setIsOrderOpen(true);
   };
 
-  const handleAddMessage = (msgData: Omit<ContactMessage, 'id' | 'createdAt' | 'status' | 'type'>) => {
+  const handleAddMessage = async (msgData: Omit<ContactMessage, 'id' | 'createdAt' | 'status' | 'type'>) => {
+    const msgId = 'msg-' + Date.now();
     const newMsg: ContactMessage = {
       ...msgData,
-      id: 'msg-' + Date.now(),
+      id: msgId,
       createdAt: new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' }) + ' (BD Time)',
       status: 'Unread',
       type: msgData.planName ? 'Order Booking' : 'General Inquiry',
     };
     setMessages(prev => [newMsg, ...prev]);
+    try {
+      await setDoc(doc(db, 'messages', msgId), newMsg);
+    } catch (err) {
+      console.error('Error saving message to Firestore:', err);
+    }
   };
 
-  const handleAddTestimonial = (item: Omit<Testimonial, 'id' | 'date'>) => {
+  const handleAddTestimonial = async (item: Omit<Testimonial, 'id' | 'date'>) => {
+    const testiId = 'testi-' + Date.now();
     const newTesti: Testimonial = {
       ...item,
-      id: 'testi-' + Date.now(),
+      id: testiId,
       date: new Date().toISOString().split('T')[0],
     };
     setTestimonials(prev => [newTesti, ...prev]);
+    try {
+      await setDoc(doc(db, 'testimonials', testiId), newTesti);
+    } catch (err) {
+      console.error('Error saving testimonial to Firestore:', err);
+    }
   };
 
-  const handleUpdateMessageStatus = (id: string, status: 'Unread' | 'Contacted' | 'Completed') => {
+  const handleUpdateMessageStatus = async (id: string, status: 'Unread' | 'Contacted' | 'Completed') => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, status } : m));
+    try {
+      await updateDoc(doc(db, 'messages', id), { status });
+    } catch (err) {
+      console.error('Error updating message status in Firestore:', err);
+    }
   };
 
-  const handleDeleteMessage = (id: string) => {
+  const handleDeleteMessage = async (id: string) => {
     setMessages(prev => prev.filter(m => m.id !== id));
+    try {
+      await deleteDoc(doc(db, 'messages', id));
+    } catch (err) {
+      console.error('Error deleting message from Firestore:', err);
+    }
   };
 
-  const handleAddProject = (newProj: Omit<Project, 'id'>) => {
+  const handleAddProject = async (newProj: Omit<Project, 'id'>) => {
+    const projId = 'proj-' + Date.now();
     const created: Project = {
       ...newProj,
-      id: 'proj-' + Date.now(),
+      id: projId,
     };
     setProjects(prev => [created, ...prev]);
+    try {
+      await setDoc(doc(db, 'projects', projId), created);
+    } catch (err) {
+      console.error('Error saving project to Firestore:', err);
+    }
   };
 
-  const handleDeleteProject = (id: string) => {
+  const handleDeleteProject = async (id: string) => {
     setProjects(prev => prev.filter(p => p.id !== id));
+    try {
+      await deleteDoc(doc(db, 'projects', id));
+    } catch (err) {
+      console.error('Error deleting project from Firestore:', err);
+    }
   };
 
   // Pricing Plan CRUD Handlers
-  const handleAddPlan = (newPlan: Omit<PricingPlan, 'id'>) => {
+  const handleAddPlan = async (newPlan: Omit<PricingPlan, 'id'>) => {
+    const planId = 'plan-' + Date.now();
     const created: PricingPlan = {
       ...newPlan,
-      id: 'plan-' + Date.now(),
+      id: planId,
     };
     setPlans(prev => [...prev, created]);
+    try {
+      await setDoc(doc(db, 'plans', planId), created);
+    } catch (err) {
+      console.error('Error saving plan to Firestore:', err);
+    }
   };
 
-  const handleDeletePlan = (id: string) => {
+  const handleDeletePlan = async (id: string) => {
     setPlans(prev => prev.filter(p => p.id !== id));
+    try {
+      await deleteDoc(doc(db, 'plans', id));
+    } catch (err) {
+      console.error('Error deleting plan from Firestore:', err);
+    }
   };
 
-  const handleUpdatePlan = (updatedPlan: PricingPlan) => {
+  const handleUpdatePlan = async (updatedPlan: PricingPlan) => {
     setPlans(prev => prev.map(p => p.id === updatedPlan.id ? updatedPlan : p));
+    try {
+      await setDoc(doc(db, 'plans', updatedPlan.id), updatedPlan, { merge: true });
+    } catch (err) {
+      console.error('Error updating plan in Firestore:', err);
+    }
   };
 
-  const handleUpdateConfig = (newCfg: Partial<SiteConfig>) => {
-    setConfig(prev => ({ ...prev, ...newCfg }));
+  const handleUpdateConfig = async (newCfg: Partial<SiteConfig>) => {
+    const updated = { ...config, ...newCfg };
+    setConfig(updated);
+    localStorage.setItem('ishaq_site_config', JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'config', 'main'), updated, { merge: true });
+    } catch (err) {
+      console.error('Error saving config to Firestore:', err);
+    }
   };
 
   const handleExportData = () => {
