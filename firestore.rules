@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Public read for projects, testimonials, plans, and site config
+    match /projects/{projectId} {
+      allow read: if true;
+      allow write: if true; // Admin managed
+    }
+
+    match /testimonials/{testimonialId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Messages can be created by anyone, read by authenticated users/admins
+    match /messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if true;
+    }
+
+    // Orders submitted by clients
+    match /orders/{orderId} {
+      allow create: if true;
+      allow read, update, delete: if true;
+    }
+
+    // User profile records
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+  }
+}

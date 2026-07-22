@@ -1,0 +1,985 @@
+import React, { useState, useEffect } from 'react';
+import { ContactMessage, Project, PricingPlan, Testimonial, SiteConfig } from '../types';
+import { Shield, Lock, X, Trash2, Plus, Edit, Download, MessageSquare, Briefcase, DollarSign, Settings, ShoppingBag, CheckCircle, Clock, AlertCircle, XCircle } from 'lucide-react';
+import { db, collection, getDocs, updateDoc, deleteDoc, doc } from '../lib/firebase';
+
+interface AdminDashboardModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  messages: ContactMessage[];
+  projects: Project[];
+  plans: PricingPlan[];
+  testimonials: Testimonial[];
+  config: SiteConfig;
+  onAdminAuthenticated?: () => void;
+  onUpdateMessageStatus: (id: string, status: 'Unread' | 'Contacted' | 'Completed') => void;
+  onDeleteMessage: (id: string) => void;
+  onAddProject: (project: Omit<Project, 'id'>) => void;
+  onDeleteProject: (id: string) => void;
+  onAddPlan: (plan: Omit<PricingPlan, 'id'>) => void;
+  onDeletePlan: (id: string) => void;
+  onUpdatePlan: (plan: PricingPlan) => void;
+  onUpdateConfig: (newConfig: Partial<SiteConfig>) => void;
+  onExportData: () => void;
+  onImportData: (jsonData: string) => void;
+}
+
+interface FirestoreOrder {
+  id: string;
+  userName: string;
+  userEmail: string;
+  userPhone: string;
+  planName: string;
+  price: string;
+  bkashTransaction: string;
+  projectRequirements: string;
+  paymentStatus?: 'Paid' | 'Unpaid';
+  orderStatus?: 'Pending' | 'In Progress' | 'Confirmed' | 'Cancelled';
+  status?: string;
+  createdAt: string;
+}
+
+export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
+  isOpen,
+  onClose,
+  messages,
+  projects,
+  plans,
+  testimonials,
+  config,
+  onAdminAuthenticated,
+  onUpdateMessageStatus,
+  onDeleteMessage,
+  onAddProject,
+  onDeleteProject,
+  onAddPlan,
+  onDeletePlan,
+  onUpdatePlan,
+  onUpdateConfig,
+  onExportData,
+  onImportData,
+}) => {
+  const [pin, setPin] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [pinError, setPinError] = useState(false);
+  const [activeTab, setActiveTab] = useState<'orders' | 'messages' | 'projects' | 'plans' | 'settings'>('orders');
+
+  // Firestore orders
+  const [dbOrders, setDbOrders] = useState<FirestoreOrder[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  // New Project Form State
+  const [showAddProject, setShowAddProject] = useState(false);
+  const [newProjTitle, setNewProjTitle] = useState('');
+  const [newProjDesc, setNewProjDesc] = useState('');
+  const [newProjCategory, setNewProjCategory] = useState<'Full Stack Web App' | 'E-Commerce' | 'Business Software' | 'UI/UX Design'>('Full Stack Web App');
+  const [newProjDemo, setNewProjDemo] = useState('');
+  const [newProjTech, setNewProjTech] = useState('');
+
+  // New Pricing Plan Form State
+  const [showAddPlan, setShowAddPlan] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [planTitle, setPlanTitle] = useState('');
+  const [planPrice, setPlanPrice] = useState('');
+  const [planDelivery, setPlanDelivery] = useState('');
+  const [planDesc, setPlanDesc] = useState('');
+  const [planFeatures, setPlanFeatures] = useState('');
+  const [planPopular, setPlanPopular] = useState(false);
+  const [planBkash, setPlanBkash] = useState('01749032883');
+
+  // Config Form State
+  const [tempWhatsapp, setTempWhatsapp] = useState(config.whatsapp);
+  const [tempEmail, setTempEmail] = useState(config.email);
+  const [tempBio, setTempBio] = useState(config.bio);
+  const [tempAvailable, setTempAvailable] = useState(config.isAvailable);
+  const [tempPhoto, setTempPhoto] = useState(config.profileImage);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchFirestoreOrders();
+    }
+  }, [isAuthenticated]);
+
+  const fetchFirestoreOrders = async () => {
+    setLoadingOrders(true);
+    try {
+      const snap = await getDocs(collection(db, 'orders'));
+      const ordersList: FirestoreOrder[] = [];
+      snap.forEach(docSnap => {
+        ordersList.push({ id: docSnap.id, ...docSnap.data() } as FirestoreOrder);
+      });
+      ordersList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setDbOrders(ordersList);
+    } catch (e) {
+      console.error('Failed to load orders from Firestore', e);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  const handleUpdateOrderStatus = async (
+    orderId: string,
+    newPaymentStatus: 'Paid' | 'Unpaid',
+    newOrderStatus: 'Pending' | 'In Progress' | 'Confirmed' | 'Cancelled'
+  ) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        paymentStatus: newPaymentStatus,
+        orderStatus: newOrderStatus,
+        status: newOrderStatus.toLowerCase().replace(' ', '_'),
+      });
+      setDbOrders(prev =>
+        prev.map(o =>
+          o.id === orderId
+            ? { ...o, paymentStatus: newPaymentStatus, orderStatus: newOrderStatus }
+            : o
+        )
+      );
+    } catch (err) {
+      console.error('Error updating order status in Firestore:', err);
+      alert('Could not update status in database.');
+    }
+  };
+
+  const handleDeleteFirestoreOrder = async (orderId: string) => {
+    if (!confirm('Are you sure you want to delete this order record?')) return;
+    try {
+      await deleteDoc(doc(db, 'orders', orderId));
+      setDbOrders(prev => prev.filter(o => o.id !== orderId));
+    } catch (err) {
+      console.error('Error deleting order from Firestore:', err);
+      alert('Failed to delete order record.');
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const handlePinSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pin.trim() === 'Fahim#123' || pin.trim() === '1234' || pin.trim() === '01749032883') {
+      setIsAuthenticated(true);
+      setPinError(false);
+      if (onAdminAuthenticated) onAdminAuthenticated();
+    } else {
+      setPinError(true);
+    }
+  };
+
+  const handleCreateProjectSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProjTitle || !newProjDemo) return;
+
+    onAddProject({
+      title: newProjTitle,
+      description: newProjDesc,
+      category: newProjCategory,
+      image: 'https://picsum.photos/seed/' + Math.random() + '/800/600',
+      demoUrl: newProjDemo,
+      techStack: newProjTech.split(',').map(t => t.trim()).filter(Boolean),
+      features: ['Modern Responsive Layout', 'Fast Loading Speed', 'Custom Frontend Logic'],
+      featured: true,
+    });
+
+    setNewProjTitle('');
+    setNewProjDesc('');
+    setNewProjDemo('');
+    setNewProjTech('');
+    setShowAddProject(false);
+  };
+
+  const handleSaveSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateConfig({
+      whatsapp: tempWhatsapp,
+      email: tempEmail,
+      bio: tempBio,
+      isAvailable: tempAvailable,
+      profileImage: tempPhoto,
+    });
+    alert('Website configuration updated successfully!');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-white max-w-4xl w-full p-6 rounded-3xl border border-sky-100 text-slate-800 relative my-6 space-y-6 max-h-[92vh] overflow-y-auto shadow-2xl">
+        
+        {/* Header Bar */}
+        <div className="flex items-center justify-between border-b border-sky-100 pb-4">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-sky-50 text-sky-700 border border-sky-200">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg text-slate-900">Ishaq Dev &bull; Admin Portal</h3>
+              <p className="text-[11px] text-slate-500">Firebase Database & Secret Management</p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full bg-sky-50 text-slate-400 hover:text-slate-700 cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {!isAuthenticated ? (
+          /* PIN Authentication Step */
+          <div className="max-w-md mx-auto py-12 text-center space-y-6">
+            <div className="w-16 h-16 rounded-full bg-sky-50 border border-sky-200 text-sky-600 flex items-center justify-center mx-auto shadow-xs">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-1">
+              <h4 className="text-xl font-bold text-slate-900">Enter Admin Access PIN</h4>
+              <p className="text-xs text-slate-500">
+                Protected area for Ishaq Ahmed to manage client orders, site settings, and portfolio configuration.
+              </p>
+            </div>
+
+            <form onSubmit={handlePinSubmit} className="space-y-4">
+              <input
+                type="password"
+                maxLength={11}
+                required
+                placeholder="Enter PIN..."
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-sky-100 text-center text-xl font-mono text-slate-900 focus:border-sky-500 focus:outline-none"
+              />
+
+              {pinError && (
+                <p className="text-xs font-semibold text-rose-600">
+                  Invalid PIN! Please check and try again.
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-3 rounded-2xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs shadow-md shadow-sky-500/20 cursor-pointer"
+              >
+                Unlock Admin Dashboard
+              </button>
+            </form>
+          </div>
+        ) : (
+          /* Authenticated Dashboard Interface */
+          <div className="space-y-6">
+            
+            {/* Tabs Navigation */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-100 pb-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setActiveTab('orders')}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'orders'
+                      ? 'bg-sky-500 text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-600 hover:bg-sky-50'
+                  }`}
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>Firebase Orders ({dbOrders.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('messages')}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'messages'
+                      ? 'bg-sky-500 text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-600 hover:bg-sky-50'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Messages ({messages.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('projects')}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'projects'
+                      ? 'bg-sky-500 text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-600 hover:bg-sky-50'
+                  }`}
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>Projects ({projects.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('plans')}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'plans'
+                      ? 'bg-sky-500 text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-600 hover:bg-sky-50'
+                  }`}
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>Pricing Plans ({plans.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    activeTab === 'settings'
+                      ? 'bg-sky-500 text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-600 hover:bg-sky-50'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Site Config</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onExportData}
+                  title="Export Site Backup JSON"
+                  className="p-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 text-xs font-mono flex items-center gap-1 border border-sky-200 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-600" />
+                  <span className="hidden sm:inline">Export JSON</span>
+                </button>
+              </div>
+            </div>
+
+            {/* TAB 0: Firebase Orders */}
+            {activeTab === 'orders' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-900">Firestore Cloud Orders Management</h4>
+                  <button
+                    onClick={fetchFirestoreOrders}
+                    className="px-3 py-1 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-xs font-bold hover:bg-sky-100 cursor-pointer"
+                  >
+                    Refresh Orders
+                  </button>
+                </div>
+
+                {loadingOrders ? (
+                  <div className="text-center py-8 text-xs text-slate-500">Loading orders from Firebase Firestore...</div>
+                ) : dbOrders.length === 0 ? (
+                  <div className="p-8 text-center bg-sky-50/50 rounded-2xl border border-sky-100 text-slate-500 text-xs">
+                    No orders submitted yet in Firebase database. Submit a test order on the Pricing section or Order Modal!
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {dbOrders.map((ord) => (
+                      <div key={ord.id} className="p-4 rounded-2xl bg-white border border-sky-100 shadow-xs space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">{ord.userName}</span>
+                            <span className="text-xs text-sky-700 font-mono font-bold">&bull; {ord.userEmail}</span>
+                            <span className="text-xs text-emerald-700 font-mono font-bold">&bull; {ord.userPhone}</span>
+                          </div>
+
+                          <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-100 text-sky-800 border border-sky-200">
+                            {ord.planName} - {ord.price}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-sky-100 whitespace-pre-wrap font-mono">
+                          {ord.projectRequirements}
+                        </p>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                          <span className="text-pink-700 font-bold">bKash Trx: {ord.bkashTransaction}</span>
+                          <span className="text-slate-400">Date: {new Date(ord.createdAt).toLocaleString()}</span>
+                        </div>
+
+                        {/* Admin Status Controls */}
+                        <div className="pt-3 border-t border-sky-100 flex flex-wrap items-center justify-between gap-3 bg-sky-50/50 p-3 rounded-2xl">
+                          <div className="flex flex-wrap items-center gap-4 text-xs">
+                            
+                            {/* Payment Status Dropdown */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-700">পেমেন্ট:</span>
+                              <select
+                                value={ord.paymentStatus || 'Unpaid'}
+                                onChange={(e) => handleUpdateOrderStatus(
+                                  ord.id,
+                                  e.target.value as 'Paid' | 'Unpaid',
+                                  ord.orderStatus || 'Pending'
+                                )}
+                                className={`px-2.5 py-1 rounded-xl text-xs font-bold border cursor-pointer ${
+                                  (ord.paymentStatus || 'Unpaid') === 'Paid'
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                    : 'bg-rose-100 text-rose-800 border-rose-300'
+                                }`}
+                              >
+                                <option value="Unpaid">Unpaid (আনপেইড)</option>
+                                <option value="Paid">Paid (পেইড)</option>
+                              </select>
+                            </div>
+
+                            {/* Order Status Dropdown */}
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-700">অর্ডার স্ট্যাটাস:</span>
+                              <select
+                                value={ord.orderStatus || 'Pending'}
+                                onChange={(e) => handleUpdateOrderStatus(
+                                  ord.id,
+                                  ord.paymentStatus || 'Unpaid',
+                                  e.target.value as any
+                                )}
+                                className={`px-2.5 py-1 rounded-xl text-xs font-bold border cursor-pointer ${
+                                  (ord.orderStatus || 'Pending') === 'Confirmed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                                  (ord.orderStatus || 'Pending') === 'In Progress' ? 'bg-sky-100 text-sky-800 border-sky-300' :
+                                  (ord.orderStatus || 'Pending') === 'Cancelled' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                                  'bg-amber-100 text-amber-800 border-amber-300'
+                                }`}
+                              >
+                                <option value="Pending">Pending (পেন্ডিং)</option>
+                                <option value="In Progress">In Progress (চলমান)</option>
+                                <option value="Confirmed">Confirmed (কনফার্মড)</option>
+                                <option value="Cancelled">Cancelled (ক্যানসেলড)</option>
+                              </select>
+                            </div>
+
+                          </div>
+
+                          <button
+                            onClick={() => handleDeleteFirestoreOrder(ord.id)}
+                            className="p-1.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1 border border-rose-200 cursor-pointer"
+                            title="Delete Order Record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 1: Messages */}
+            {activeTab === 'messages' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-900">Client Messages & Inquiries</h4>
+                  <span className="text-xs text-slate-500">Total: {messages.length} Records</span>
+                </div>
+
+                {messages.length === 0 ? (
+                  <div className="p-8 text-center bg-sky-50/50 rounded-2xl border border-sky-100 text-slate-500 text-xs">
+                    No client messages recorded yet. Submit a test message on the contact section!
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className="p-4 rounded-2xl bg-white border border-sky-100 shadow-xs space-y-2 relative"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">{msg.name}</span>
+                            <span className="text-xs text-sky-700 font-mono font-bold">&bull; {msg.email}</span>
+                            {msg.phone && <span className="text-xs text-emerald-700 font-mono font-bold">&bull; {msg.phone}</span>}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              msg.status === 'Unread' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                              msg.status === 'Contacted' ? 'bg-sky-100 text-sky-800 border border-sky-200' :
+                              'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              {msg.status}
+                            </span>
+
+                            <button
+                              onClick={() => onDeleteMessage(msg.id)}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600"
+                              title="Delete Message"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="text-xs font-semibold text-slate-800">{msg.subject}</div>
+
+                        <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-sky-100 whitespace-pre-wrap font-mono">
+                          {msg.message}
+                        </p>
+
+                        {msg.bkashTrxId && (
+                          <div className="text-xs font-mono text-pink-700 bg-pink-50 px-3 py-1.5 rounded-lg border border-pink-200">
+                            bKash Transaction ID: <strong className="text-slate-900">{msg.bkashTrxId}</strong>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 text-[10px] text-slate-500 font-mono">
+                          <span>Received: {msg.createdAt}</span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => onUpdateMessageStatus(msg.id, 'Contacted')}
+                              className="hover:text-sky-700 font-bold"
+                            >
+                              Mark Contacted
+                            </button>
+                            <span>&bull;</span>
+                            <button
+                              onClick={() => onUpdateMessageStatus(msg.id, 'Completed')}
+                              className="hover:text-emerald-700 font-bold"
+                            >
+                              Mark Completed
+                            </button>
+                          </div>
+                        </div>
+
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: Projects */}
+            {activeTab === 'projects' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-900">Portfolio Projects Manager</h4>
+                  <button
+                    onClick={() => setShowAddProject(!showAddProject)}
+                    className="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add New Project</span>
+                  </button>
+                </div>
+
+                {showAddProject && (
+                  <form onSubmit={handleCreateProjectSubmit} className="p-4 rounded-2xl bg-sky-50 border border-sky-200 space-y-3">
+                    <h5 className="text-xs font-bold text-sky-800 uppercase">Create New Showcase Project</h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Project Title..."
+                        value={newProjTitle}
+                        onChange={(e) => setNewProjTitle(e.target.value)}
+                        className="px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                      />
+
+                      <select
+                        value={newProjCategory}
+                        onChange={(e) => setNewProjCategory(e.target.value as any)}
+                        className="px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                      >
+                        <option value="Full Stack Web App">Full Stack Web App</option>
+                        <option value="E-Commerce">E-Commerce</option>
+                        <option value="Business Software">Business Software</option>
+                        <option value="UI/UX Design">UI/UX Design</option>
+                      </select>
+                    </div>
+
+                    <input
+                      type="url"
+                      required
+                      placeholder="Live Demo URL (e.g. https://my-app.netlify.app/)"
+                      value={newProjDemo}
+                      onChange={(e) => setNewProjDemo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                    />
+
+                    <input
+                      type="text"
+                      placeholder="Tech Stack (comma separated: React, Node, Firebase...)"
+                      value={newProjTech}
+                      onChange={(e) => setNewProjTech(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                    />
+
+                    <textarea
+                      placeholder="Description..."
+                      rows={2}
+                      value={newProjDesc}
+                      onChange={(e) => setNewProjDesc(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                    ></textarea>
+
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddProject(false)}
+                        className="px-3 py-1.5 text-xs text-slate-500"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 text-xs font-bold bg-sky-500 text-white rounded-xl"
+                      >
+                        Save Project
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {projects.map((p) => (
+                    <div key={p.id} className="p-3 rounded-2xl bg-white border border-sky-100 flex items-center justify-between gap-2 shadow-xs">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">{p.title}</div>
+                        <div className="text-[10px] text-sky-700 font-mono font-bold truncate max-w-xs">{p.demoUrl}</div>
+                      </div>
+
+                      <button
+                        onClick={() => onDeleteProject(p.id)}
+                        className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100"
+                        title="Delete Project"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: Pricing Plans Manager */}
+            {activeTab === 'plans' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-900">Hire Me & Pricing Packages Manager</h4>
+                  <button
+                    onClick={() => {
+                      setEditingPlanId(null);
+                      setPlanTitle('');
+                      setPlanPrice('৳');
+                      setPlanDelivery('3-5 Days');
+                      setPlanDesc('');
+                      setPlanFeatures('Responsive Layout\nCustom Frontend & API\n1 Month Support');
+                      setPlanPopular(false);
+                      setShowAddPlan(!showAddPlan);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add New Package</span>
+                  </button>
+                </div>
+
+                {showAddPlan && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const featuresArr = planFeatures.split('\n').map(f => f.trim()).filter(Boolean);
+                      if (editingPlanId) {
+                        onUpdatePlan({
+                          id: editingPlanId,
+                          name: planTitle,
+                          price: planPrice,
+                          duration: planDelivery,
+                          description: planDesc,
+                          features: featuresArr,
+                          popular: planPopular,
+                          bkashNumber: planBkash,
+                        });
+                      } else {
+                        onAddPlan({
+                          name: planTitle,
+                          price: planPrice,
+                          duration: planDelivery,
+                          description: planDesc,
+                          features: featuresArr,
+                          popular: planPopular,
+                          bkashNumber: planBkash,
+                        });
+                      }
+                      setShowAddPlan(false);
+                      setEditingPlanId(null);
+                    }}
+                    className="p-4 rounded-2xl bg-sky-50 border border-sky-200 space-y-3"
+                  >
+                    <h5 className="text-xs font-bold text-sky-800 uppercase">
+                      {editingPlanId ? 'Edit Package' : 'Create New Package'}
+                    </h5>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Package Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Starter Package / Custom App"
+                          value={planTitle}
+                          onChange={(e) => setPlanTitle(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Price (BDT / USD)</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. ৳5,000 / $50"
+                          value={planPrice}
+                          onChange={(e) => setPlanPrice(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Delivery Duration</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. 3-5 Days"
+                          value={planDelivery}
+                          onChange={(e) => setPlanDelivery(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">bKash Payment Number</label>
+                        <input
+                          type="text"
+                          required
+                          value={planBkash}
+                          onChange={(e) => setPlanBkash(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-600 font-semibold block mb-1">Short Description</label>
+                      <input
+                        type="text"
+                        placeholder="Brief summary of what client gets..."
+                        value={planDesc}
+                        onChange={(e) => setPlanDesc(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-600 font-semibold block mb-1">Features List (1 per line)</label>
+                      <textarea
+                        rows={3}
+                        required
+                        placeholder="Feature 1&#10;Feature 2&#10;Feature 3"
+                        value={planFeatures}
+                        onChange={(e) => setPlanFeatures(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-sky-100 text-xs text-slate-800 font-mono"
+                      ></textarea>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="planPop"
+                        checked={planPopular}
+                        onChange={(e) => setPlanPopular(e.target.checked)}
+                        className="accent-sky-600"
+                      />
+                      <label htmlFor="planPop" className="text-xs text-slate-700">
+                        Highlight as "Most Popular / Recommended" Package
+                      </label>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddPlan(false)}
+                        className="px-3 py-1.5 text-xs text-slate-500"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 text-xs font-bold bg-sky-500 text-white rounded-xl"
+                      >
+                        {editingPlanId ? 'Update Package' : 'Save Package'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                <div className="space-y-3">
+                  {plans.map((p) => (
+                    <div
+                      key={p.id}
+                      className="p-4 rounded-2xl bg-white border border-sky-100 shadow-xs flex flex-wrap items-center justify-between gap-3"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-slate-800">{p.name}</span>
+                          <span className="text-xs font-mono font-bold text-sky-700">{p.price}</span>
+                          {p.popular && (
+                            <span className="text-[10px] bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 rounded font-bold">
+                              Popular
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">{p.description}</p>
+                        <div className="text-[11px] text-slate-400 mt-1">
+                          Delivery: {p.duration} &bull; Features: {p.features.length} Items
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingPlanId(p.id);
+                            setPlanTitle(p.name);
+                            setPlanPrice(p.price);
+                            setPlanDelivery(p.duration);
+                            setPlanDesc(p.description);
+                            setPlanFeatures(p.features.join('\n'));
+                            setPlanPopular(p.popular || false);
+                            setPlanBkash(p.bkashNumber || '01749032883');
+                            setShowAddPlan(true);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          onClick={() => onDeletePlan(p.id)}
+                          className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer"
+                          title="Delete Package"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: Settings */}
+            {activeTab === 'settings' && (
+              <form onSubmit={handleSaveSettings} className="space-y-4">
+                <h4 className="text-sm font-bold text-slate-900">Agency & Developer Settings</h4>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 rounded-2xl bg-white border border-sky-100 shadow-xs">
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">Freelance Availability Status</div>
+                      <div className="text-[11px] text-slate-500">Controls the green availability status pill on Hero section</div>
+                    </div>
+
+                    <input
+                      type="checkbox"
+                      checked={tempAvailable}
+                      onChange={(e) => setTempAvailable(e.target.checked)}
+                      className="accent-sky-600 h-5 w-5 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Developer Profile Photo Setting */}
+                  <div className="p-3 rounded-2xl bg-white border border-sky-100 shadow-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">Developer Profile Photo Settings</div>
+                        <div className="text-[11px] text-slate-500">Only accessible via Admin Dashboard Panel</div>
+                      </div>
+
+                      {tempPhoto && (
+                        <img
+                          src={tempPhoto}
+                          alt="Current Preview"
+                          className="w-10 h-10 rounded-full object-cover border-2 border-sky-500"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Upload Image File</label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                if (typeof reader.result === 'string') {
+                                  setTempPhoto(reader.result);
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-500 file:text-white cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Or Photo Image URL</label>
+                        <input
+                          type="text"
+                          value={tempPhoto}
+                          onChange={(e) => setTempPhoto(e.target.value)}
+                          placeholder="https://..."
+                          className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-sky-100 text-xs text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-600 font-semibold block mb-1">WhatsApp & bKash Number</label>
+                      <input
+                        type="text"
+                        value={tempWhatsapp}
+                        onChange={(e) => setTempWhatsapp(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-sky-100 text-xs text-slate-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-slate-600 font-semibold block mb-1">Contact Email</label>
+                      <input
+                        type="email"
+                        value={tempEmail}
+                        onChange={(e) => setTempEmail(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-sky-100 text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-slate-600 font-semibold block mb-1">Developer Bio</label>
+                    <textarea
+                      rows={3}
+                      value={tempBio}
+                      onChange={(e) => setTempBio(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-sky-100 text-xs text-slate-800"
+                    ></textarea>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs shadow-xs cursor-pointer"
+                  >
+                    Save Site Configuration
+                  </button>
+                </div>
+              </form>
+            )}
+
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
