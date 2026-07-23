@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface LogoProps {
   logoImage?: string;
@@ -6,13 +6,16 @@ interface LogoProps {
 }
 
 export const Logo: React.FC<LogoProps> = ({ logoImage, className = "h-9 w-auto" }) => {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div className={`flex items-center gap-2.5 group cursor-pointer ${className}`}>
-      {logoImage ? (
+      {logoImage && !imgError ? (
         <div className="relative">
           <img 
             src={logoImage} 
             alt="Ishaq Dev Logo" 
+            onError={() => setImgError(true)}
             className="h-10 w-10 rounded-xl object-contain border border-cyan-500/30 group-hover:border-cyan-400 transition-all duration-300 shadow-md shadow-cyan-500/10"
             referrerPolicy="no-referrer"
           />

@@ -81,8 +81,14 @@ export default function App() {
     const unsubscribe = onSnapshot(doc(db, 'config', 'main'), (snapshot) => {
       if (snapshot.exists()) {
         const firestoreConfig = snapshot.data() as SiteConfig;
-        setConfig(firestoreConfig);
-        localStorage.setItem('ishaq_site_config', JSON.stringify(firestoreConfig));
+        const mergedConfig: SiteConfig = {
+          ...initialSiteConfig,
+          ...firestoreConfig,
+          profileImage: firestoreConfig.profileImage || initialSiteConfig.profileImage,
+          logoImage: firestoreConfig.logoImage || initialSiteConfig.logoImage,
+        };
+        setConfig(mergedConfig);
+        localStorage.setItem('ishaq_site_config', JSON.stringify(mergedConfig));
       } else {
         setDoc(doc(db, 'config', 'main'), initialSiteConfig).catch(console.error);
       }

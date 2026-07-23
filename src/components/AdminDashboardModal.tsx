@@ -93,6 +93,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [tempBio, setTempBio] = useState(config.bio);
   const [tempAvailable, setTempAvailable] = useState(config.isAvailable);
   const [tempPhoto, setTempPhoto] = useState(config.profileImage);
+  const [tempLogo, setTempLogo] = useState(config.logoImage || '');
 
   useEffect(() => {
     setTempWhatsapp(config.whatsapp);
@@ -100,7 +101,51 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setTempBio(config.bio);
     setTempAvailable(config.isAvailable);
     setTempPhoto(config.profileImage);
+    setTempLogo(config.logoImage || '');
   }, [config]);
+
+  // Helper function to compress images before saving to prevent Firestore 1MB document size limit errors
+  const compressImageFile = (file: File, callback: (dataUrl: string) => void) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 500;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.8);
+          callback(compressed);
+        } else {
+          if (typeof reader.result === 'string') callback(reader.result);
+        }
+      };
+      img.onerror = () => {
+        if (typeof reader.result === 'string') callback(reader.result);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -203,8 +248,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       bio: tempBio,
       isAvailable: tempAvailable,
       profileImage: tempPhoto,
+      logoImage: tempLogo,
     });
-    alert('Website configuration updated successfully!');
+    alert('Website configuration & pictures updated successfully and permanently saved to Firebase database!');
   };
 
   return (
@@ -888,18 +934,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </div>
 
                   {/* Developer Profile Photo Setting */}
-                  <div className="p-3 rounded-2xl bg-white border border-sky-100 shadow-xs space-y-2">
+                  <div className="p-3.5 rounded-2xl bg-white border border-sky-100 shadow-xs space-y-2">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-xs font-bold text-slate-800">Developer Profile Photo Settings</div>
-                        <div className="text-[11px] text-slate-500">Only accessible via Admin Dashboard Panel</div>
+                        <div className="text-xs font-bold text-slate-800">Developer Profile Photo (ডেভেলপার ছবি)</div>
+                        <div className="text-[11px] text-slate-500">Auto-compressed for fast loading & permanent database persistence</div>
                       </div>
 
                       {tempPhoto && (
                         <img
                           src={tempPhoto}
                           alt="Current Preview"
-                          className="w-10 h-10 rounded-full object-cover border-2 border-sky-500"
+                          className="w-11 h-11 rounded-full object-cover border-2 border-sky-500 shadow-xs"
                           referrerPolicy="no-referrer"
                         />
                       )}
@@ -907,20 +953,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                       <div>
-                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Upload Image File</label>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Upload Profile Photo</label>
                         <input
                           type="file"
                           accept="image/*"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = () => {
-                                if (typeof reader.result === 'string') {
-                                  setTempPhoto(reader.result);
-                                }
-                              };
-                              reader.readAsDataURL(file);
+                              compressImageFile(file, (compressedUrl) => {
+                                setTempPhoto(compressedUrl);
+                              });
                             }
                           }}
                           className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-500 file:text-white cursor-pointer"
@@ -928,13 +970,66 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       </div>
 
                       <div>
-                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Or Photo Image URL</label>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Or Profile Photo URL</label>
                         <input
                           type="text"
                           value={tempPhoto}
                           onChange={(e) => setTempPhoto(e.target.value)}
                           placeholder="https://..."
-                          className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-sky-100 text-xs text-slate-800"
+                          className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-sky-100 text-xs text-slate-800 focus:outline-none focus:border-sky-400"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Website Brand Logo Setting */}
+                  <div className="p-3.5 rounded-2xl bg-white border border-sky-100 shadow-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">Website Brand Logo (ওয়েবসাইটের লোগো)</div>
+                        <div className="text-[11px] text-slate-500">Appears in Navigation Header & Footer</div>
+                      </div>
+
+                      {tempLogo ? (
+                        <img
+                          src={tempLogo}
+                          alt="Logo Preview"
+                          className="w-11 h-11 rounded-xl object-contain border border-sky-300 p-0.5 bg-slate-900 shadow-xs"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-11 h-11 rounded-xl bg-slate-900 border border-sky-400 text-sky-400 font-black text-xs flex items-center justify-center">
+                          ID
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Upload Brand Logo</label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              compressImageFile(file, (compressedUrl) => {
+                                setTempLogo(compressedUrl);
+                              });
+                            }
+                          }}
+                          className="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-500 file:text-white cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-600 font-semibold block mb-1">Or Logo Image URL</label>
+                        <input
+                          type="text"
+                          value={tempLogo}
+                          onChange={(e) => setTempLogo(e.target.value)}
+                          placeholder="https://..."
+                          className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-sky-100 text-xs text-slate-800 focus:outline-none focus:border-sky-400"
                         />
                       </div>
                     </div>
