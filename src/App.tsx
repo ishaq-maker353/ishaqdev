@@ -22,12 +22,25 @@ import { auth, onAuthStateChanged, User, db, doc, setDoc, updateDoc, deleteDoc, 
 
 export default function App() {
   const [activePage, setActivePage] = useState<string>('home');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<User | any>(() => {
+    const saved = localStorage.getItem('ishaq_client_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('ishaq_admin_authenticated') === 'true';
+  });
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
+      if (user) {
+        setCurrentUser(user);
+        localStorage.setItem('ishaq_client_user', JSON.stringify({
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || user.email?.split('@')[0] || 'Client User',
+          photoURL: user.photoURL || ''
+        }));
+      }
     });
     return () => unsubscribe();
   }, []);

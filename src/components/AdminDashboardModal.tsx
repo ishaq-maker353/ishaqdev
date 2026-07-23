@@ -60,7 +60,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onImportData,
 }) => {
   const [pin, setPin] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('ishaq_admin_authenticated') === 'true';
+  });
   const [pinError, setPinError] = useState(false);
   const [activeTab, setActiveTab] = useState<'orders' | 'messages' | 'projects' | 'plans' | 'settings'>('orders');
 
@@ -211,11 +213,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     e.preventDefault();
     if (pin.trim() === 'Fahim#123' || pin.trim() === '1234' || pin.trim() === '01749032883') {
       setIsAuthenticated(true);
+      localStorage.setItem('ishaq_admin_authenticated', 'true');
       setPinError(false);
       if (onAdminAuthenticated) onAdminAuthenticated();
     } else {
       setPinError(true);
     }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('ishaq_admin_authenticated');
+    setPin('');
   };
 
   const handleCreateProjectSubmit = (e: React.FormEvent) => {
@@ -269,12 +278,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full bg-sky-50 text-slate-400 hover:text-slate-700 cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isAuthenticated && (
+              <button
+                type="button"
+                onClick={handleAdminLogout}
+                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-bold transition-all cursor-pointer mr-1"
+                title="Log out from Admin panel"
+              >
+                Logout (লগআউট)
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-sky-50 text-slate-400 hover:text-slate-700 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {!isAuthenticated ? (

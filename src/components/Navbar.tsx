@@ -33,12 +33,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Determine if the logged in user is Admin
-  const isAdminUser = isAdminAuthenticated || (currentUser && (
-    currentUser.email?.toLowerCase() === developerEmail.toLowerCase() ||
-    currentUser.email?.toLowerCase() === 'fariyafahim523@gmail.com' ||
-    currentUser.email?.toLowerCase() === 'ishaqahmed.dev@gmail.com'
-  ));
+  // Determine if the logged in user is Admin (strictly via PIN authentication)
+  const isAdminUser = Boolean(isAdminAuthenticated);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error('Sign out error:', e);
+    }
+    localStorage.removeItem('ishaq_client_user');
+    localStorage.removeItem('ishaq_admin_authenticated');
+    window.location.reload();
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -109,17 +116,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                   title="Open Admin Dashboard & Full Control Panel"
                 >
                   <Shield className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Admin Panel (এডমিন প্যানেল)</span>
+                  <span>Admin Dashboard (এডমিন ড্যাশবোর্ড)</span>
                 </button>
               ) : (
-                /* Normal User logged in: Show My Profile & Orders Button */
+                /* Normal User logged in: Show Client Dashboard Button */
                 <button
                   onClick={onOpenMyOrders}
                   className="px-3 py-2 rounded-xl bg-sky-100 hover:bg-sky-200/80 text-sky-800 text-xs font-bold transition-all flex items-center gap-1.5 border border-sky-200 cursor-pointer"
                   title="View My Profile & Ordered Plans"
                 >
                   <ShoppingBag className="w-3.5 h-3.5 text-sky-600" />
-                  <span>My Profile & Orders</span>
+                  <span>Client Dashboard (মাই ড্যাশবোর্ড)</span>
                 </button>
               )}
 
@@ -129,11 +136,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 ) : (
                   <UserIcon className="w-4 h-4 text-sky-600" />
                 )}
-                <span className="font-semibold text-slate-700 max-w-[100px] truncate">
+                <span className="font-semibold text-slate-700 max-w-[110px] truncate">
                   {isAdminUser ? 'Admin' : (currentUser?.displayName || currentUser?.email?.split('@')[0])}
                 </span>
                 <button
-                  onClick={() => signOut(auth)}
+                  onClick={handleSignOut}
                   title="Sign Out"
                   className="text-slate-400 hover:text-rose-600 ml-1 cursor-pointer"
                 >
@@ -220,13 +227,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       {mobileMenuOpen && (
         <div className="lg:hidden bg-white/95 border-b border-sky-100 px-4 pt-3 pb-6 space-y-3 backdrop-blur-xl animate-in slide-in-from-top duration-300 shadow-xl">
           
-          {!currentUser && !isAdminAuthenticated ? (
+          {!currentUser && !isAdminUser ? (
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
                 onOpenAuth();
               }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-100 border border-sky-200 text-sky-800 text-xs font-bold"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-100 border border-sky-200 text-sky-800 text-xs font-bold cursor-pointer"
             >
               <LogIn className="w-4 h-4" />
               <span>Login to Track Orders / Profile</span>
@@ -237,14 +244,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="flex items-center gap-2">
                   <UserIcon className="w-4 h-4 text-sky-600" />
                   <span className="font-bold text-slate-800">
-                    {isAdminUser ? 'Admin User' : (currentUser?.displayName || currentUser?.email)}
+                    {isAdminUser ? 'Admin Panel (এডমিন)' : (currentUser?.displayName || currentUser?.email)}
                   </span>
                 </div>
                 <button
-                  onClick={() => signOut(auth)}
-                  className="text-xs font-bold text-rose-600 hover:underline"
+                  onClick={handleSignOut}
+                  className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
                 >
-                  Sign Out
+                  Sign Out (লগআউট)
                 </button>
               </div>
 
@@ -255,10 +262,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setMobileMenuOpen(false);
                     onOpenAdmin();
                   }}
-                  className="w-full mt-1 py-2 px-3 rounded-xl bg-sky-600 text-white font-bold text-xs flex items-center justify-center gap-2"
+                  className="w-full mt-1 py-2 px-3 rounded-xl bg-sky-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                 >
                   <Shield className="w-4 h-4 text-amber-300" />
-                  <span>Go to Full Admin Panel</span>
+                  <span>Admin Dashboard (এডমিন ড্যাশবোর্ড)</span>
                 </button>
               ) : (
                 <button
@@ -266,10 +273,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setMobileMenuOpen(false);
                     onOpenMyOrders();
                   }}
-                  className="w-full mt-1 py-2 px-3 rounded-xl bg-sky-100 text-sky-800 font-bold text-xs flex items-center justify-center gap-2 border border-sky-200"
+                  className="w-full mt-1 py-2 px-3 rounded-xl bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold text-xs flex items-center justify-center gap-2 border border-sky-200 cursor-pointer"
                 >
                   <ShoppingBag className="w-4 h-4 text-sky-600" />
-                  <span>My Profile & Ordered Plans</span>
+                  <span>Client Dashboard (মাই ড্যাশবোর্ড & অর্ডার)</span>
                 </button>
               )}
             </div>
