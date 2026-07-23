@@ -101,7 +101,11 @@ export default function App() {
           logoImage: firestoreConfig.logoImage || initialSiteConfig.logoImage,
         };
         setConfig(mergedConfig);
-        localStorage.setItem('ishaq_site_config', JSON.stringify(mergedConfig));
+        try {
+          localStorage.setItem('ishaq_site_config', JSON.stringify(mergedConfig));
+        } catch (e) {
+          console.warn('LocalStorage limit reached for config.');
+        }
       } else {
         setDoc(doc(db, 'config', 'main'), initialSiteConfig).catch(console.error);
       }
@@ -121,7 +125,11 @@ export default function App() {
           list.push({ id: docSnap.id, ...docSnap.data() } as Project);
         });
         setProjects(list);
-        localStorage.setItem('ishaq_projects', JSON.stringify(list));
+        try {
+          localStorage.setItem('ishaq_projects', JSON.stringify(list));
+        } catch (e) {
+          console.warn('LocalStorage limit reached, skipping cache.');
+        }
       } else {
         initialProjects.forEach((p) => {
           setDoc(doc(db, 'projects', p.id), p).catch(console.error);
@@ -299,6 +307,7 @@ export default function App() {
       await setDoc(doc(db, 'projects', projId), created);
     } catch (err) {
       console.error('Error saving project to Firestore:', err);
+      alert('Error saving project! Image might be too large (max 1MB). Please try a smaller image.');
     }
   };
 
@@ -308,6 +317,7 @@ export default function App() {
       await setDoc(doc(db, 'projects', updatedProj.id), updatedProj, { merge: true });
     } catch (err) {
       console.error('Error updating project in Firestore:', err);
+      alert('Error saving changes! Image might be too large (max 1MB). Please try a smaller image.');
     }
   };
 
@@ -356,11 +366,16 @@ export default function App() {
   const handleUpdateConfig = async (newCfg: Partial<SiteConfig>) => {
     const updated = { ...config, ...newCfg };
     setConfig(updated);
-    localStorage.setItem('ishaq_site_config', JSON.stringify(updated));
+    try {
+      localStorage.setItem('ishaq_site_config', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage limit reached for config.');
+    }
     try {
       await setDoc(doc(db, 'config', 'main'), updated, { merge: true });
     } catch (err) {
       console.error('Error saving config to Firestore:', err);
+      alert('Error saving settings! Image might be too large (max 1MB). Please try a smaller image.');
     }
   };
 

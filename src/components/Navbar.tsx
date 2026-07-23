@@ -159,7 +159,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
 
           {/* Admin Shield Portal Login Button */}
-          {!isAdminUser && (
+          {!isAdminUser && !currentUser && (
             <button
               onClick={onOpenAdmin}
               title="Admin Portal"

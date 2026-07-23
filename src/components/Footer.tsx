@@ -120,13 +120,6 @@ export const Footer: React.FC<FooterProps> = ({ config, onOpenOrder, onOpenAdmin
 
           <div className="flex items-center gap-4">
             <button
-              onClick={onOpenAdmin}
-              className="hover:text-sky-700 transition-colors text-[11px] font-mono cursor-pointer font-bold"
-            >
-              [ Admin Portal ]
-            </button>
-
-            <button
               onClick={scrollToTop}
               className="p-2 rounded-xl bg-white border border-sky-200 text-slate-600 hover:text-sky-700 transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
               title="Back to top"
