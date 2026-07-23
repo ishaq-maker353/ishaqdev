@@ -302,6 +302,15 @@ export default function App() {
     }
   };
 
+  const handleUpdateProject = async (updatedProj: Project) => {
+    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+    try {
+      await setDoc(doc(db, 'projects', updatedProj.id), updatedProj, { merge: true });
+    } catch (err) {
+      console.error('Error updating project in Firestore:', err);
+    }
+  };
+
   const handleDeleteProject = async (id: string) => {
     setProjects(prev => prev.filter(p => p.id !== id));
     try {
@@ -491,6 +500,7 @@ export default function App() {
         onUpdateMessageStatus={handleUpdateMessageStatus}
         onDeleteMessage={handleDeleteMessage}
         onAddProject={handleAddProject}
+        onUpdateProject={handleUpdateProject}
         onDeleteProject={handleDeleteProject}
         onAddPlan={handleAddPlan}
         onDeletePlan={handleDeletePlan}
